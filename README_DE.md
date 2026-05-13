@@ -2,6 +2,13 @@
 
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/K3K610R4F9)
 
+```
+  Post-release issues (werden mit dem nächsten Update behoben)
+
+ Wenn während eines Color-Swaps load oder extrude fehlschlägt, mit der Standard Display Laderoutine wiederholen.
+  — nicht Manual Load.
+```
+
 Hotfix 2 - löst FA-Probleme, Retract bei Swaps und BRANDNEUES WEB-UI
 
 ## 🌐 Brandneues Reaktives Web-UI
