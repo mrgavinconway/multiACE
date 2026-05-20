@@ -4,7 +4,7 @@
 
 ## What's new in multiACE 0.97b "Kindred Allies"
 
-**ACE Pro 2 Support - up to 4 or mixed mode with ACE 1 Units / 4 Max not matter what type**
+**ACE Pro 2 Support - up to 4 or mixed mode with ACE 1 Units / 4 Max no matter what type**
 
 **PAXX Firmware with integrated mUlt1ACE** 
 
