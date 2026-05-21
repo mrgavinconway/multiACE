@@ -5,7 +5,7 @@
 ## Was ist neu in multiACE 0.97b "Kindred Allies" Hotfix 1 (prerelease)
 
 
-**Hotfix 1 repariert das Update,  USB Lärm und fügt Web Logging hinzu**
+**- Hotfix 1 repariert das Update,  USB Lärm und fügt Web Logging hinzu**
 
 **ACE Pro 2 Support - bis zu 4 Geräte oder Mischbetrieb mit ACE-Pro-Einheiten (max. 4, unabhängig vom Typ)**
 
