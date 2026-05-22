@@ -7,7 +7,7 @@
 **- Hotfix 1 fixes the update feature, some USB Noise and adds web logging**
 
 
-#ACE Pro 2 Support 
+## ACE Pro 2 Support 
 
 **- up to 4 or mixed mode with ACE 1 Units / 4 Max no matter what type**
 
