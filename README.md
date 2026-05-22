@@ -20,7 +20,7 @@ https://drive.google.com/file/d/1SUnXyiJ28iv01P94k4XbRpL4bjl3HbdU/view?usp=shari
 
 Instructions for building a cable in hardware setup section of this readme.
 
-**PAXX Firmware with integrated mUlt1ACE** 
+## PAXX Firmware with integrated mUlt1ACE
 
 Bin Files & Manuals (soon) @ 
 
