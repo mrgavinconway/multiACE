@@ -16,7 +16,7 @@ There is a update script available, but use at you own risk.
 https://gist.github.com/hakimio/39c71fa7174e699c6470b7c79323b189 Thanks to hakimio for making this possible.
 https://drive.google.com/file/d/1SUnXyiJ28iv01P94k4XbRpL4bjl3HbdU/view?usp=sharing
 
-Instructions for building a cable in hardware section of this readme.
+Instructions for building a cable in hardware setup section of this readme.
 
 **PAXX Firmware with integrated mUlt1ACE** 
 
