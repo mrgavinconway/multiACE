@@ -9,6 +9,16 @@
 
 **ACE Pro 2 Support - bis zu 4 Geräte oder Mischbetrieb mit ACE-Pro-Einheiten (max. 4, unabhängig vom Typ)**
 
+ACE Pro 2 Unit muss auf Firmware: 1.1.31 sein, ein Update ist nötig.
+
+Es gibt ein Update Script, benutzung auf eigene Gefahr:
+
+https://gist.github.com/hakimio/39c71fa7174e699c6470b7c79323b189 Danke nochmal an hakimio, ohne seine Arbeit wäre dies nicht möglich.
+
+https://drive.google.com/file/d/1SUnXyiJ28iv01P94k4XbRpL4bjl3HbdU/view?usp=sharing
+
+Anleitung für das Kabel in der Hardware Sektion dieser readme.
+
 **PAXX-Firmware mit integriertem mUlt1ACE**
 
 Bin Files & Manuals @ 
@@ -17,13 +27,6 @@ https://postapocalyptic-diy.com/multiace
 
 Source: https://github.com/decay71/SnapmakerU1-Extended-Firmware  
 
-ACE Pro 2 Unit muss auf Firmware: 1.1.31 sein, ein Update ist nötig.
-
-Es gibt ein Update Script, benutzung auf eigene Gefahr:
-
-https://gist.github.com/hakimio/39c71fa7174e699c6470b7c79323b189 Danke nochmal an hakimio, ohne seine Arbeit wäre dies nicht möglich.
-
-https://drive.google.com/file/d/1SUnXyiJ28iv01P94k4XbRpL4bjl3HbdU/view?usp=sharing
 
 **Online-Updates (`touch /oem/.debug` erforderlich)**
 Lädt von postapocalyptic-diy.com, für mini Updates, in config löschen um nur github für Releases zu benutzen.
