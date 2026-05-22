@@ -27,12 +27,15 @@ Bin Files & Manuals (soon) @
 https://postapocalyptic-diy.com/multiace
 Source: https://github.com/decay71/SnapmakerU1-Extended-Firmware  
 
+## Post processing replaced by Web Preflight
+
+Just upload unprocessed GCode via Multiace-Web, print in actual loaded order or organize spools according to optimized layout to save swaps.
+Autoloads needed spools, no need to preload.
+
 
 **Online Updates (touch /oem/.debug needed)**
 
 Loads from postapocalyptic-diy-com. Used for minor Updates, delete in config to use github for releases
-
-**Post processing replaced by Web Preflight, just upload unprocessed GCode via Multiace-Web**
 
 **Matched to 1.3 Firmware routines**
 
