@@ -135,6 +135,46 @@ if [ -f "$WEB_NGINX" ]; then
         nginx -s reload 2>/dev/null || true
     fi
 fi
+# 1.4 layout: the installer injects the location /multiace/ block directly
+# into sites-available/fluidd (no fluidd.d dir). Strip it back out.
+FLUIDD_SITE="/etc/nginx/sites-available/fluidd"
+if [ -f "$FLUIDD_SITE" ] && grep -q 'location /multiace/' "$FLUIDD_SITE"; then
+    cp "$FLUIDD_SITE" "${FLUIDD_SITE}.bak.multiace-uninstall" 2>/dev/null || true
+    python3 - "$FLUIDD_SITE" <<'PYEOF'
+import re, sys
+p = sys.argv[1]
+s = open(p).read()
+# Remove the whole 'location /multiace/ { ... }' block (brace-balanced),
+# plus trailing blank line.
+out, i, n = [], 0, len(s)
+key = s.find('location /multiace/')
+while key != -1:
+    brace = s.find('{', key)
+    depth, j = 0, brace
+    while j < n:
+        if s[j] == '{': depth += 1
+        elif s[j] == '}':
+            depth -= 1
+            if depth == 0:
+                j += 1
+                break
+        j += 1
+    # swallow leading indentation of the block and one trailing newline/blank
+    start = s.rfind('\n', 0, key) + 1
+    while j < n and s[j] in ' \t': j += 1
+    if j < n and s[j] == '\n': j += 1
+    if j < n and s[j] == '\n': j += 1
+    s = s[:start] + s[j:]
+    n = len(s)
+    key = s.find('location /multiace/')
+open(p, 'w').write(s)
+print('removed /multiace/ block')
+PYEOF
+    log "  Removed /multiace/ block from $FLUIDD_SITE"
+    if command -v nginx >/dev/null 2>&1; then
+        nginx -t >/dev/null 2>&1 && nginx -s reload 2>/dev/null || true
+    fi
+fi
 if [ -d /home/lava/multiace_web ]; then
     rm -rf /home/lava/multiace_web
     log "  /home/lava/multiace_web removed"

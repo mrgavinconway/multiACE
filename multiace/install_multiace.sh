@@ -95,6 +95,22 @@ log "  Klipper extras installed"
 cp "$INSTALL_DIR/klipper/kinematics/extruder_ace.py" "$KINEMATICS_DIR/extruder_ace.py"
 chmod 644 "$KINEMATICS_DIR/extruder_ace.py"
 log "  Klipper kinematics installed"
+# Multi-MCU homing trsync window. Stock paxx sets TRSYNC_TIMEOUT=0.050; the
+# eddy-current bed probe intermittently exceeds it on a toolhead MCU and trips
+# "Communication timeout during homing" (0003-0528, index:3). The 0.250
+# mitigation (= Klipper's own single-MCU value) masks it. The standalone
+# web-head daemon (S98multiace-web) reduces but does not eliminate the 0003
+# (web-preflight bedmesh still trips it), so the mitigation is re-armed here.
+#
+# TESTING: set to "0.050" to leave stock untouched and observe the real 0003
+# signal. To re-arm the mitigation, change this ONE value back to "0.250".
+TRSYNC_VALUE="0.250"
+MCU_PY="${HOME_DIR}/klipper/klippy/mcu.py"
+if [ -f "$MCU_PY" ] && grep -qE '^TRSYNC_TIMEOUT = ' "$MCU_PY" \
+        && ! grep -qE "^TRSYNC_TIMEOUT = ${TRSYNC_VALUE}\$" "$MCU_PY"; then
+    [ -f "${MCU_PY}.pre_multiace" ] || cp "$MCU_PY" "${MCU_PY}.pre_multiace" 2>/dev/null || true
+    sed -i -E "s/^TRSYNC_TIMEOUT = .*/TRSYNC_TIMEOUT = ${TRSYNC_VALUE}/" "$MCU_PY"
+fi
 NEW_CFG="$INSTALL_DIR/config/extended/ace.cfg"
 ACTIVE_CFG="$CONFIG_DIR/ace.cfg"
 MERGER="$INSTALL_DIR/tools/merge_ace_cfg.py"
@@ -136,6 +152,16 @@ if [ ! -f "$MULTIACE_DIR/ace_vars.cfg" ]; then
     log "  ace_vars.cfg created (fresh)"
 else
     log "  ace_vars.cfg exists, keeping current settings"
+fi
+# User-editable filament material list. Created fresh; never overwritten, so
+# user additions survive updates. (Bin installs that skip this still work -
+# the web backend seeds materials.json from its built-in default on first
+# access.)
+if [ ! -f "$MULTIACE_DIR/materials.json" ]; then
+    cp "$INSTALL_DIR/config/extended/multiace/materials.json" "$MULTIACE_DIR/materials.json" 2>/dev/null \
+        && log "  materials.json created (fresh)" || true
+else
+    log "  materials.json exists, keeping user materials"
 fi
 log "  multiace config installed"
 if [ -d "$INSTALL_DIR/i18n" ]; then
@@ -342,8 +368,13 @@ if [ "$INSTALL_WEB" = "1" ]; then
     if [ -d "$INSTALL_DIR/i18n" ]; then
         cp -a "$INSTALL_DIR/i18n/." "$WEB_DEST/i18n/"
     fi
-    rm -rf "$WEB_DEST/backend/__pycache__"
-    chown -R lava:lava "$WEB_DEST"
+    # Drop stale bytecode. May be root-owned (left over from when the web
+    # head ran as root) while the updater runs as lava - so this can fail;
+    # never let it abort the install (set -e). Stale .pyc is harmless:
+    # Python recompiles when the .py is newer.
+    rm -rf "$WEB_DEST/backend/__pycache__" 2>/dev/null || true
+    find "$WEB_DEST/backend/__pycache__" -type f -delete 2>/dev/null || true
+    chown -R lava:lava "$WEB_DEST" 2>/dev/null || true
     log "  Copied web/ to $WEB_DEST (incl. i18n catalogs)"
     if run_as_lava "command -v pip3 >/dev/null" 2>/dev/null; then
         log "  Installing Python deps (fastapi, uvicorn, httpx) for user lava ..."
@@ -364,8 +395,52 @@ if [ "$INSTALL_WEB" = "1" ]; then
             else
                 log "  WARN: nginx -t failed - drop-in installed but not active"
             fi
+        elif [ -f /etc/nginx/sites-available/fluidd ]; then
+            # Firmware 1.4 layout: no fluidd.d include dir; inject the
+            # /multiace/ location straight into the fluidd server block.
+            FLUIDD_SITE="/etc/nginx/sites-available/fluidd"
+            if grep -q 'location /multiace/' "$FLUIDD_SITE"; then
+                log "  nginx: /multiace/ already present in $FLUIDD_SITE"
+            else
+                if grep -rqs 'auth_check' /etc/nginx/ 2>/dev/null; then
+                    AUTHLINE='        auth_request /auth_check;'
+                else
+                    AUTHLINE=''
+                fi
+                cp "$FLUIDD_SITE" "${FLUIDD_SITE}.bak.multiace" 2>/dev/null || true
+                python3 - "$FLUIDD_SITE" "$AUTHLINE" <<'PYEOF'
+import sys
+p, authline = sys.argv[1], sys.argv[2]
+s = open(p).read()
+auth = (authline + "\n") if authline else ""
+block = ("    location /multiace/ {\n" + auth +
+         "        proxy_pass http://127.0.0.1:7126/;\n"
+         "        proxy_http_version 1.1;\n"
+         "        proxy_set_header Host $host;\n"
+         "        proxy_set_header X-Real-IP $remote_addr;\n"
+         "        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n"
+         "        proxy_set_header X-Forwarded-Proto $scheme;\n"
+         "        proxy_set_header Upgrade $http_upgrade;\n"
+         '        proxy_set_header Connection "upgrade";\n'
+         "        proxy_buffering off;\n"
+         "        proxy_read_timeout 3600s;\n"
+         "        proxy_send_timeout 3600s;\n"
+         "    }\n\n")
+if '/multiace/' not in s and '    location / {' in s:
+    open(p, 'w').write(s.replace('    location / {', block + '    location / {', 1))
+    print('inserted')
+else:
+    print('skipped')
+PYEOF
+                log "  nginx: injected /multiace/ block into $FLUIDD_SITE"
+            fi
+            if nginx -t >>"$LOGFILE" 2>&1; then
+                nginx -s reload >>"$LOGFILE" 2>&1 && log "  nginx reloaded"
+            else
+                log "  WARN: nginx -t failed - see $LOGFILE"
+            fi
         else
-            log "  WARN: /etc/nginx/fluidd.d not present - nginx drop-in skipped"
+            log "  WARN: neither /etc/nginx/fluidd.d nor sites-available/fluidd - nginx proxy not configured"
         fi
     else
         log "  Skipped nginx drop-in update (non-root context - already in place from first install)"
@@ -373,7 +448,10 @@ if [ "$INSTALL_WEB" = "1" ]; then
     if [ "$IS_ROOT" = "1" ]; then
         cp "$WEB_SRC/deploy/S98multiace-web" "$INITD_SCRIPT"
         sed -i 's/\r$//' "$INITD_SCRIPT"
-        chmod +x "$INITD_SCRIPT"
+        # 0755 (not just +x): ace.py runs as lava and must be able to
+        # execute this script. A root-only -rwx------ leaves the web head
+        # unstartable from the Klipper side after a reboot.
+        chmod 0755 "$INITD_SCRIPT"
         log "  Installed init script: $INITD_SCRIPT"
     else
         log "  Skipped init script update (non-root context)"
@@ -395,8 +473,14 @@ if [ "$INSTALL_WEB" = "1" ]; then
                 rm -f "$TMP_SUDO"
                 log "  Installed sudoers drop-in: $SUDOERS_DST"
             fi
+        elif [ ! -d "/etc/sudoers.d" ]; then
+            # The Snapmaker U1 ships without sudo, so there is no
+            # /etc/sudoers.d - this is normal, not an error. The web head
+            # runs as the printer user and the in-place updater works via
+            # the chowned klipper dirs (no sudo needed). Nothing to do.
+            log "  sudo not present on this system - skipping sudoers drop-in (normal on U1)"
         else
-            log "  WARN: sudoers.d not present or template missing - Web debug-mode toggle won't work"
+            log "  WARN: sudoers template missing - skipping sudoers drop-in"
         fi
     else
         log "  Skipped sudoers drop-in update (non-root context)"
