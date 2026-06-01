@@ -5,6 +5,7 @@
 
 [![Guides & Downloads](visitbutton.png)](https://postapocalyptic-diy.com/multiace/)
 
+## IF YOU DONLOADED THE 0.97.2 BIN form my homepage, please redownload, 0003 patch missing
 
 ## What's new in multiACE 0.97b "Kindred Allies" Hotfix 2 (prerelease)
 
