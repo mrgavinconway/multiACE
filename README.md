@@ -6,6 +6,9 @@
 [![Guides & Downloads](visitbutton.png)](https://postapocalyptic-diy.com/multiace/)
 
 ## Post-release notes
+- Filament runout does not reenable Feed assist, air prints with new spool,  will be fixed in next version
+
+- Bin image Web-Preflight not working, ssh install or re-download Paxx 12-17 version, corrected it there.
 
 - Paxx 12-17 version available
 
