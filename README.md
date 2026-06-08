@@ -6,6 +6,8 @@
 [![Guides & Downloads](visitbutton.png)](https://postapocalyptic-diy.com/multiace/)
 
 ## Post-release notes
+- Paxx 12-18 prerelease version available - not fully tested against this firmare, next version is fully tested, but may take a while, so i decided to build this.
+
 - RESUME Bug: just noticed a change in code destroyed a few Resume paths during swap. If you can't Resume with "can't resume while machine main state idle" Error, type SET_MAIN_STATE MAIN_STATE=PRINTING and RESUME in fluidd console, will be fixed in next release.
 
 - Filament runout does not reenable Feed assist, air prints with new spool,  will be fixed in next version
