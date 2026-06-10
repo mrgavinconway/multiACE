@@ -570,6 +570,24 @@ max_dryer_temperature: 70    # safety cap
 # dryer_duration_0: 240
 ```
 
+### Spoolman (optional)
+
+Spoolman can be configured as the external source of spool identity and
+filament metadata for the multiACE Web UI. It is optional: if Spoolman is
+disabled or unreachable, users can still label slots manually and load
+filament normally.
+
+multiACE never sends the full Spoolman spool name to the ACE hardware.
+Spoolman data is reduced to safe printer-facing metadata: a base material
+such as `PLA`, `PETG`, `ABS`, `ASA`, `TPU`, `PA`, `PC` or `PVA`, plus a
+single display color. The ACE load/unload path remains slot-index based.
+
+```ini
+spoolman_enable: false       # true = use Spoolman metadata in Web UI
+spoolman_host:               # hostname or IP, e.g. spoolman.local
+spoolman_port: 7912          # Spoolman TCP port
+```
+
 ### Feed-Assist (FA) Gate
 
 ```ini

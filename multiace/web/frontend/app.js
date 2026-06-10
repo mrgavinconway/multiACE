@@ -779,6 +779,9 @@ createApp({
       dryer_duration: '',
       display_index_base: 0,
       v2_order: 'first',
+      spoolman_enable: false,
+      spoolman_host: '',
+      spoolman_port: 7912,
       load_retry: '',
       extrusion_retry: '',
       unload_retry: '',
@@ -826,6 +829,9 @@ createApp({
       configForm.dryer_duration    = numOrEmpty(params.dryer_duration);
       configForm.display_index_base = numOrEmpty(params.display_index_base);
       configForm.v2_order = (params.v2_order === 'last') ? 'last' : 'first';
+      configForm.spoolman_enable = bool('spoolman_enable');
+      configForm.spoolman_host = params.spoolman_host || '';
+      configForm.spoolman_port = numOrEmpty(params.spoolman_port || 7912);
       configForm.load_retry        = numOrEmpty(params.load_retry);
       configForm.extrusion_retry   = numOrEmpty(params.extrusion_retry);
       configForm.unload_retry      = numOrEmpty(params.unload_retry);
@@ -867,6 +873,9 @@ createApp({
         dryer_duration:     numStr(configForm.dryer_duration),
         display_index_base: numStr(configForm.display_index_base),
         v2_order:           configForm.v2_order === 'last' ? 'last' : 'first',
+        spoolman_enable:    configForm.spoolman_enable ? 'true' : 'false',
+        spoolman_host:      (configForm.spoolman_host || '').trim(),
+        spoolman_port:      numStr(configForm.spoolman_port),
         load_retry:         numStr(configForm.load_retry),
         extrusion_retry:    numStr(configForm.extrusion_retry),
         unload_retry:       numStr(configForm.unload_retry),

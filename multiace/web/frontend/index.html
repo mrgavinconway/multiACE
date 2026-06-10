@@ -274,6 +274,18 @@
             <option value="last">after ACE 1</option>
           </select>
         </div>
+        <fieldset>
+          <legend>{{ t('ui.config.spoolman') }}</legend>
+          <label><input type="checkbox" v-model="configForm.spoolman_enable"> {{ t('ui.config.spoolman_enable') }}</label>
+          <div class="config-row">
+            <label>{{ t('ui.config.spoolman_host') }}</label>
+            <input type="text" v-model.trim="configForm.spoolman_host" placeholder="spoolman.local">
+          </div>
+          <div class="config-row">
+            <label>{{ t('ui.config.spoolman_port') }}</label>
+            <input type="number" v-model.number="configForm.spoolman_port" min="1" max="65535" step="1" placeholder="7912">
+          </div>
+        </fieldset>
         <div class="config-row">
           <label>{{ t('ui.config.load_retry') }}</label>
           <input type="number" v-model.number="configForm.load_retry" min="0" max="20" step="1" placeholder="-">

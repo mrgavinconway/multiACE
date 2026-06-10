@@ -67,6 +67,100 @@ DEFAULT_MATERIALS = [
     "PC", "PC-ABS",
     "PVA",
 ]
+SAFE_PTC_MATERIALS = {
+    "PLA", "PETG", "ABS", "ASA", "TPU", "PA", "PC", "PVA",
+}
+_MATERIAL_ALIASES = {
+    "PLA+": "PLA",
+    "PLA PRO": "PLA",
+    "PLA PRO+": "PLA",
+    "PLA-CF": "PLA",
+    "PLA CF": "PLA",
+    "PETG-CF": "PETG",
+    "PETG CF": "PETG",
+    "PETG-HF": "PETG",
+    "PETG HF": "PETG",
+    "ABA": "ABS",
+    "ABS+": "ABS",
+    "ASA-CF": "ASA",
+    "ASA CF": "ASA",
+    "TPU95A": "TPU",
+    "PA-CF": "PA",
+    "PA CF": "PA",
+    "PA-GF": "PA",
+    "PA GF": "PA",
+    "PA6-CF": "PA",
+    "PA6 CF": "PA",
+    "PA6-GF": "PA",
+    "PA6 GF": "PA",
+    "NYLON": "PA",
+    "PC-ABS": "PC",
+}
+_SAFE_LABEL_RE = re.compile(r"[^A-Za-z0-9 _+./-]+")
+_HEX_COLOR_RE = re.compile(r"^#?[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?$")
+
+def _sanitize_ptc_label(value: Any, max_len: int = 64) -> str:
+    """Constrain labels before they can become quoted G-code args."""
+    s = str(value or "").replace('"', "").replace("\\", "")
+    s = "".join(ch if 32 <= ord(ch) < 127 else " " for ch in s)
+    s = _SAFE_LABEL_RE.sub("", s)
+    return " ".join(s.split())[:max_len]
+
+def _normalize_material(value: Any) -> str:
+    """Map rich filament names to conservative printer material tokens."""
+    s = _sanitize_ptc_label(value).upper()
+    if not s or s in ("NONE", "UNKNOWN"):
+        return ""
+    s = s.replace("_", "-")
+    if s in SAFE_PTC_MATERIALS:
+        return s
+    if s in _MATERIAL_ALIASES:
+        return _MATERIAL_ALIASES[s]
+    for token in re.split(r"[^A-Z0-9]+", s):
+        if token in SAFE_PTC_MATERIALS:
+            return token
+        if token in _MATERIAL_ALIASES:
+            return _MATERIAL_ALIASES[token]
+    return ""
+
+def _normalize_color(value: Any) -> str:
+    """Return a canonical #rrggbb color, or empty for invalid/black input."""
+    s = str(value or "").strip()
+    if not _HEX_COLOR_RE.match(s):
+        return ""
+    h = s.lstrip("#")[:6].lower()
+    if h in ("000000", "00000000"):
+        return ""
+    return "#" + h
+
+def _safe_optional_int(value: Any) -> int | None:
+    """Parse optional external IDs without letting bad values persist."""
+    if value in (None, ""):
+        return None
+    try:
+        n = int(value)
+    except (TypeError, ValueError):
+        return None
+    return n if n >= 0 else None
+
+def _sanitize_slot_override(data: dict) -> dict:
+    """Normalize one slot override before storing or reloading it."""
+    out = {
+        "ace":      int(data.get("ace", 0)),
+        "slot":     int(data.get("slot", 0)),
+        "material": _normalize_material(data.get("material")),
+        "brand":    _sanitize_ptc_label(data.get("brand"), 64),
+        "subtype":  _sanitize_ptc_label(data.get("subtype"), 64),
+        "color":    _normalize_color(data.get("color")),
+    }
+    for key in ("spoolman_spool_id", "spoolman_filament_id"):
+        val = _safe_optional_int(data.get(key))
+        if val is not None:
+            out[key] = val
+    src = _sanitize_ptc_label(data.get("spoolman_name"), 96)
+    if src:
+        out["spoolman_name"] = src
+    return out
 I18N_DIR = os.environ.get(
     "MULTIACE_I18N_DIR",
     str((Path(__file__).resolve().parent.parent / "i18n")),
@@ -465,6 +559,9 @@ class SlotOverride(BaseModel):
     brand: str | None = ""
     subtype: str | None = ""
     color: str | None = ""
+    spoolman_spool_id: int | None = None
+    spoolman_filament_id: int | None = None
+    spoolman_name: str | None = ""
 
 async def _mr_get(path: str) -> dict:
     async with httpx.AsyncClient(timeout=10.0) as client:
@@ -1808,7 +1905,15 @@ def _load_overrides_from_disk() -> None:
         data = json.loads(p.read_text(encoding="utf-8"))
         if isinstance(data, dict):
             _slot_overrides.clear()
-            _slot_overrides.update(data)
+            for key, val in data.items():
+                if not isinstance(val, dict):
+                    continue
+                try:
+                    clean = _sanitize_slot_override(val)
+                    clean_key = _override_key(clean["ace"], clean["slot"])
+                    _slot_overrides[clean_key] = clean
+                except Exception:
+                    continue
         try:
             _overrides_mtime = p.stat().st_mtime
         except OSError:
@@ -1890,14 +1995,7 @@ async def list_slot_overrides() -> dict:
 @app.post("/api/slot-override")
 async def set_slot_override(req: SlotOverride) -> dict:
     key = _override_key(req.ace, req.slot)
-    new = {
-        "ace":      req.ace,
-        "slot":     req.slot,
-        "material": req.material or "",
-        "brand":    req.brand or "",
-        "subtype":  req.subtype or "",
-        "color":    req.color or "",
-    }
+    new = _sanitize_slot_override(req.dict())
     old = _slot_overrides.get(key)
     _slot_overrides[key] = new
     _trace.info("override SET via picker POST ACE %d / slot %d: %s -> %s",

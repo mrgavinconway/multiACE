@@ -32,6 +32,14 @@ nginx zu ihm durchkommen - keine eigene User-/Token-Logik.
 | PUT     | `/multiace/api/config`| Schreibt `ace.cfg` (Backup `.bak`, optional Klipper-Restart) |
 | WS      | `/multiace/ws`        | Live-Push der ACE-States (Intervall ~1 s)  |
 
+## Spoolman
+
+Spoolman ist optional und wird über die `[ace]`-Werte
+`spoolman_enable`, `spoolman_host` und `spoolman_port` konfiguriert
+(auch im Config-Tab der Web-UI). Die Integration dient als Quelle für
+Spulen-Identität und Filament-Metadaten; Laden/Entladen bleibt
+slot-basiert und darf nicht blockieren, wenn Spoolman offline ist.
+
 Display-Mirror wird **nicht** durch FastAPI proxied - das Frontend redet
 direkt mit `/screen/snapshot` und `/screen/touch` (paxx fb-http). Mobile
 Apps machen es analog.

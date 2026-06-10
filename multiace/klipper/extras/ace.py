@@ -6,6 +6,7 @@ import queue
 import threading
 import traceback
 import os
+import re
 import time
 import hashlib
 import serial
@@ -21,6 +22,27 @@ MULTIACE_CODENAME = "Kindred Allies"
 
 MULTIACE_BUILD_TAG = "6335ce7"
 MULTIACE_BUNDLE_SHA1 = "d27478b"
+
+SAFE_PTC_MATERIALS = set([
+    'PLA', 'PETG', 'ABS', 'ASA', 'TPU', 'PA', 'PC', 'PVA',
+])
+MATERIAL_ALIASES = {
+    'PLA+': 'PLA', 'PLA PRO': 'PLA', 'PLA PRO+': 'PLA',
+    'PLA-CF': 'PLA', 'PLA CF': 'PLA',
+    'PETG-CF': 'PETG', 'PETG CF': 'PETG',
+    'PETG-HF': 'PETG', 'PETG HF': 'PETG',
+    'ABA': 'ABS',
+    'ABS+': 'ABS',
+    'ASA-CF': 'ASA', 'ASA CF': 'ASA',
+    'TPU95A': 'TPU',
+    'PA-CF': 'PA', 'PA CF': 'PA',
+    'PA-GF': 'PA', 'PA GF': 'PA',
+    'PA6-CF': 'PA', 'PA6 CF': 'PA',
+    'PA6-GF': 'PA', 'PA6 GF': 'PA',
+    'NYLON': 'PA',
+    'PC-ABS': 'PC',
+}
+SAFE_PTC_LABEL_RE = re.compile(r'[^A-Za-z0-9 _+./-]+')
 
 def _load_i18n_catalog(i18n_dir, lang):
     """Read <i18n_dir>/<lang>.json overlaid on en.json. Returns a dict
@@ -319,6 +341,10 @@ class MultiAce:
         self._language = config.get('language', 'en')
         self._display_index_base = config.getint(
             'display_index_base', 0, minval=0, maxval=1)
+        self._spoolman_enable = config.getboolean('spoolman_enable', False)
+        self._spoolman_host = config.get('spoolman_host', '').strip()
+        self._spoolman_port = config.getint(
+            'spoolman_port', 7912, minval=1, maxval=65535)
 
         i18n_primary = '/home/lava/printer_data/config/extended/multiace/i18n'
         i18n_fallback = os.path.join(self._web_dir, 'i18n')
@@ -1221,13 +1247,8 @@ class MultiAce:
             push_vendor = brand if brand else 'NONE'
             push_color = (color + 'FF') if color else '000000FF'
             push_subtype = sub
-            self._expect_ptc_push(slot_idx, push_type, push_color,
-                                  push_vendor, push_subtype)
-            lines.append(
-                'SET_PRINT_FILAMENT_CONFIG CONFIG_EXTRUDER=%d '
-                'FILAMENT_TYPE="%s" FILAMENT_COLOR_RGBA=%s '
-                'VENDOR="%s" FILAMENT_SUBTYPE="%s"' % (
-                    slot_idx, push_type, push_color, push_vendor, push_subtype))
+            lines.append(self._ptc_line(
+                slot_idx, push_type, push_color, push_vendor, push_subtype))
         try:
             self.gcode.run_script_from_command('\n'.join(lines))
             logging.info(
@@ -2976,19 +2997,9 @@ class MultiAce:
                                 push_brand  = new_brand
                                 push_subtype = ''
                             for head in target_heads:
-                                self._expect_ptc_push(head, push_type, push_color, push_brand, push_subtype)
                                 self.gcode.run_script_from_command(
-                                    'SET_PRINT_FILAMENT_CONFIG '
-                                    'CONFIG_EXTRUDER=%d '
-                                    'FILAMENT_TYPE="%s" '
-                                    'FILAMENT_COLOR_RGBA=%s '
-                                    'VENDOR="%s" '
-                                    'FILAMENT_SUBTYPE="%s"' % (
-                                        head,
-                                        push_type,
-                                        push_color,
-                                        push_brand,
-                                        push_subtype))
+                                    self._ptc_line(head, push_type, push_color,
+                                                   push_brand, push_subtype))
                         elif is_active:
 
                             source = self._head_source.get(i)
@@ -3009,15 +3020,9 @@ class MultiAce:
                                 self.log_always(self._t('msg.find_rfid_fallback',
                                     slot=self._disp(i), head=i))
                                 self.log_always(self._t('msg.raw_slot_dump', slot=new_slot))
-                                self._expect_ptc_push(i, push_type, push_color, push_brand, push_subtype)
                                 self.gcode.run_script_from_command(
-                                    'SET_PRINT_FILAMENT_CONFIG '
-                                    'CONFIG_EXTRUDER=%d '
-                                    'FILAMENT_TYPE="%s" '
-                                    'FILAMENT_COLOR_RGBA=%s '
-                                    'VENDOR="%s" '
-                                    'FILAMENT_SUBTYPE="%s"' % (
-                                        i, push_type, push_color, push_brand, push_subtype))
+                                    self._ptc_line(i, push_type, push_color,
+                                                   push_brand, push_subtype))
                     gate_list = self._gate_status_per_ace.setdefault(
                         idx, [GATE_UNKNOWN] * 4)
                     gate_list[i] = GATE_EMPTY if new_slot.get('status') == 'empty' else GATE_AVAILABLE
@@ -3059,6 +3064,9 @@ class MultiAce:
                                     push_color = self.rgb2hex(*slot.get('color', (0, 0, 0)))
                                     push_vendor = slot.get('brand', 'Generic')
                                     push_subtype = ''
+                                push_type, push_color, push_vendor, push_subtype = (
+                                    self._sanitize_ptc_args(
+                                        push_type, push_color, push_vendor, push_subtype))
                                 want_type = push_type or ''
                                 want_vendor = push_vendor or ''
                                 want_color = (push_color or '').upper()
@@ -3079,15 +3087,9 @@ class MultiAce:
                                             '[multiACE] display heal: head %d was "%s"/"%s"/%s, repushing %s/%s/%s' % (
                                                 head, cur_type, cur_vendor, cur_color,
                                                 push_type, push_vendor, push_color))
-                                        self._expect_ptc_push(head, push_type, push_color, push_vendor, push_subtype)
-                                        heal_lines.append(
-                                            'SET_PRINT_FILAMENT_CONFIG '
-                                            'CONFIG_EXTRUDER=%d '
-                                            'FILAMENT_TYPE="%s" '
-                                            'FILAMENT_COLOR_RGBA=%s '
-                                            'VENDOR="%s" '
-                                            'FILAMENT_SUBTYPE="%s"' % (
-                                                head, push_type, push_color, push_vendor, push_subtype))
+                                        heal_lines.append(self._ptc_line(
+                                            head, push_type, push_color,
+                                            push_vendor, push_subtype))
                             if heal_lines:
                                 self.gcode.run_script_from_command('\n'.join(heal_lines))
                     except Exception as he:
@@ -3475,7 +3477,20 @@ class MultiAce:
             with open(self._slot_overrides_file, 'r') as f:
                 data = _json.load(f)
             if isinstance(data, dict):
-                self._slot_overrides = data
+                clean = {}
+                for k, v in data.items():
+                    if not isinstance(v, dict):
+                        continue
+                    try:
+                        ace_idx = int(v.get('ace'))
+                        slot_idx = int(v.get('slot'))
+                    except (TypeError, ValueError):
+                        continue
+                    sv = self._sanitize_override(v)
+                    sv['ace'] = ace_idx
+                    sv['slot'] = slot_idx
+                    clean['%d_%d' % (ace_idx, slot_idx)] = sv
+                self._slot_overrides = clean
                 try:
                     self._slot_overrides_mtime = _os.path.getmtime(self._slot_overrides_file)
                 except OSError:
@@ -3518,34 +3533,96 @@ class MultiAce:
         except OSError:
             pass
 
+    def _sanitize_ptc_label(self, value, max_len=64):
+        """Strip characters that could break quoted G-code arguments."""
+        s = str(value or '').replace('"', '').replace('\\', '')
+        s = ''.join((ch if 32 <= ord(ch) < 127 else ' ') for ch in s)
+        s = SAFE_PTC_LABEL_RE.sub('', s)
+        return ' '.join(s.split())[:max_len]
+
+    def _normalize_ptc_material(self, value):
+        """Map rich filament names to safe Snapmaker material tokens."""
+        s = self._sanitize_ptc_label(value).upper().replace('_', '-')
+        if not s or s in ('NONE', 'UNKNOWN'):
+            return ''
+        if s in SAFE_PTC_MATERIALS:
+            return s
+        if s in MATERIAL_ALIASES:
+            return MATERIAL_ALIASES[s]
+        for token in re.split(r'[^A-Z0-9]+', s):
+            if token in SAFE_PTC_MATERIALS:
+                return token
+            if token in MATERIAL_ALIASES:
+                return MATERIAL_ALIASES[token]
+        return ''
+
+    def _sanitize_override(self, o):
+        """Clean a slot override loaded from disk before using it."""
+        if not isinstance(o, dict):
+            return {}
+        out = dict(o)
+        out['material'] = self._normalize_ptc_material(o.get('material'))
+        out['brand'] = self._sanitize_ptc_label(o.get('brand'), 64)
+        out['subtype'] = self._sanitize_ptc_label(o.get('subtype'), 64)
+        out['color'] = self._ptc_color_to_override_hex(o.get('color'))
+        return out
+
     def _override_for(self, ace_idx, slot_idx):
         """Return the override dict for (ace, slot) when at least one
         meaningful field is set, else None."""
         o = self._slot_overrides.get('%d_%d' % (int(ace_idx), int(slot_idx)))
         if not o:
             return None
+        o = self._sanitize_override(o)
         if not (o.get('material') or o.get('color')):
             return None
         return o
 
     def _override_color_to_rgba(self, hex_color):
         """Picker stores '#rrggbb'; display wants RRGGBBAA."""
-        h = (hex_color or '').lstrip('#').upper()
+        h = self._ptc_color_to_override_hex(hex_color).lstrip('#').upper()
         if len(h) == 6:
             return h + 'FF'
         if len(h) == 8:
             return h
-        return 'FFFFFFFF'
+        return '000000FF'
 
     def _ptc_color_to_override_hex(self, c):
         """SET_PRINT_FILAMENT_CONFIG arg comes in as RRGGBB or RRGGBBAA
         (with or without #). Picker overrides store '#rrggbb'."""
         if c is None:
             return ''
-        s = str(c).lstrip('#').upper()
-        if len(s) >= 6:
+        s = str(c).strip().lstrip('#').upper()
+        if len(s) in (6, 8) and all(ch in '0123456789ABCDEF' for ch in s):
+            if s[:6] == '000000':
+                return ''
             return '#' + s[:6]
         return ''
+
+    def _sanitize_ptc_args(self, ftype, color_rgba, vendor, subtype):
+        """Normalize all fields that will be sent to print_task_config."""
+        clean_type = 'NONE' if self._sanitize_ptc_label(ftype).upper() == 'NONE' \
+            else self._normalize_ptc_material(ftype)
+        clean_vendor = self._sanitize_ptc_label(vendor, 64)
+        clean_subtype = self._sanitize_ptc_label(subtype, 64)
+        raw_color = str(color_rgba or '').strip().lstrip('#').upper()
+        clean_color = raw_color if raw_color in ('00000000', '000000FF') \
+            else self._override_color_to_rgba(color_rgba)
+        return clean_type, clean_color, clean_vendor, clean_subtype
+
+    def _ptc_line(self, head, ftype, color_rgba, vendor, subtype):
+        """Build one sanitized SET_PRINT_FILAMENT_CONFIG command line."""
+        ftype, color_rgba, vendor, subtype = self._sanitize_ptc_args(
+            ftype, color_rgba, vendor, subtype)
+        self._expect_ptc_push(head, ftype, color_rgba, vendor, subtype)
+        return (
+            'SET_PRINT_FILAMENT_CONFIG '
+            'CONFIG_EXTRUDER=%d '
+            'FILAMENT_TYPE="%s" '
+            'FILAMENT_COLOR_RGBA=%s '
+            'VENDOR="%s" '
+            'FILAMENT_SUBTYPE="%s"' % (
+                head, ftype, color_rgba, vendor, subtype))
 
     def _save_slot_overrides(self):
         """Write self._slot_overrides back to slot_overrides.json
@@ -3576,6 +3653,8 @@ class MultiAce:
         the override-capture path. Cap the buffer at 32 entries so a
         gcode that errored before the wrapper ran can't grow it
         unbounded."""
+        ftype, color_rgba, vendor, subtype = self._sanitize_ptc_args(
+            ftype, color_rgba, vendor, subtype)
         self._expected_ptc_pushes.append({
             'head':    int(head),
             'type':    str(ftype or ''),
@@ -3688,10 +3767,10 @@ class MultiAce:
         new_override = {
             'ace':      ace_idx,
             'slot':     slot_idx,
-            'material': merged_material,
-            'brand':    merged_brand,
-            'subtype':  merged_subtype,
-            'color':    merged_color,
+            'material': self._normalize_ptc_material(merged_material),
+            'brand':    self._sanitize_ptc_label(merged_brand, 64),
+            'subtype':  self._sanitize_ptc_label(merged_subtype, 64),
+            'color':    self._ptc_color_to_override_hex(merged_color),
         }
         if existing == new_override:
             return
@@ -3730,25 +3809,11 @@ class MultiAce:
                     push_color = self._override_color_to_rgba(override.get('color', ''))
                     push_brand = override.get('brand') or fallback_brand
                     push_subtype = override.get('subtype', '') or ''
-                    self._expect_ptc_push(head, push_type, push_color, push_brand, push_subtype)
-                    lines.append(
-                        'SET_PRINT_FILAMENT_CONFIG '
-                        'CONFIG_EXTRUDER=%d '
-                        'FILAMENT_TYPE="%s" '
-                        'FILAMENT_COLOR_RGBA=%s '
-                        'VENDOR="%s" '
-                        'FILAMENT_SUBTYPE="%s"' % (
-                            head, push_type, push_color, push_brand, push_subtype))
+                    lines.append(self._ptc_line(
+                        head, push_type, push_color, push_brand, push_subtype))
                 else:
-                    self._expect_ptc_push(head, fallback_type, fallback_color, fallback_brand, '')
-                    lines.append(
-                        'SET_PRINT_FILAMENT_CONFIG '
-                        'CONFIG_EXTRUDER=%d '
-                        'FILAMENT_TYPE="%s" '
-                        'FILAMENT_COLOR_RGBA=%s '
-                        'VENDOR="%s" '
-                        'FILAMENT_SUBTYPE=""' % (
-                            head, fallback_type, fallback_color, fallback_brand))
+                    lines.append(self._ptc_line(
+                        head, fallback_type, fallback_color, fallback_brand, ''))
             else:
 
                 empty_override = self._override_for(active, head)
@@ -3764,26 +3829,12 @@ class MultiAce:
                         '[multiACE] _push_rfid_info: head %d - unloaded, '
                         'pushing override (active ACE %d / slot %d)' % (
                             head, active, head))
-                    self._expect_ptc_push(head, push_type, push_color, push_brand, push_subtype)
-                    lines.append(
-                        'SET_PRINT_FILAMENT_CONFIG '
-                        'CONFIG_EXTRUDER=%d '
-                        'FILAMENT_TYPE="%s" '
-                        'FILAMENT_COLOR_RGBA=%s '
-                        'VENDOR="%s" '
-                        'FILAMENT_SUBTYPE="%s"' % (
-                            head, push_type, push_color, push_brand, push_subtype))
+                    lines.append(self._ptc_line(
+                        head, push_type, push_color, push_brand, push_subtype))
                     continue
                 logging.info(
                     '[multiACE] _push_rfid_info: head %d - empty, clearing display' % head)
-                self._expect_ptc_push(head, '', '000000FF', '', '')
-                lines.append(
-                    'SET_PRINT_FILAMENT_CONFIG '
-                    'CONFIG_EXTRUDER=%d '
-                    'FILAMENT_TYPE="" '
-                    'FILAMENT_COLOR_RGBA=000000FF '
-                    'VENDOR="" '
-                    'FILAMENT_SUBTYPE=""' % head)
+                lines.append(self._ptc_line(head, '', '000000FF', '', ''))
         if lines:
             self.gcode.run_script_from_command('\n'.join(lines))
 
@@ -4340,15 +4391,9 @@ class MultiAce:
             push_color   = self._head_source[head]['color']
             push_brand   = self._head_source[head]['brand']
             push_subtype = ''
-        self._expect_ptc_push(head, push_type, push_color, push_brand, push_subtype)
         self.gcode.run_script_from_command(
-            'SET_PRINT_FILAMENT_CONFIG '
-            'CONFIG_EXTRUDER=%d '
-            'FILAMENT_TYPE="%s" '
-            'FILAMENT_COLOR_RGBA=%s '
-            'VENDOR="%s" '
-            'FILAMENT_SUBTYPE="%s"' % (
-                head, push_type, push_color, push_brand, push_subtype))
+            self._ptc_line(head, push_type, push_color,
+                           push_brand, push_subtype))
 
         self.log_always(self._t('msg.load_head_loaded',
             head=head, ace=self._disp(ace_index), slot=self._disp(slot)))
@@ -5748,29 +5793,17 @@ class MultiAce:
                 push_color   = self.rgb2hex(*si.get('color', (0, 0, 0)))
                 push_brand   = si.get('brand', 'Generic')
                 push_subtype = ''
-            self._expect_ptc_push(head, push_type, push_color, push_brand, push_subtype)
             self.gcode.run_script_from_command(
-                'SET_PRINT_FILAMENT_CONFIG '
-                'CONFIG_EXTRUDER=%d '
-                'FILAMENT_TYPE="%s" '
-                'FILAMENT_COLOR_RGBA=%s '
-                'VENDOR="%s" '
-                'FILAMENT_SUBTYPE="%s"' % (
-                    head, push_type, push_color, push_brand, push_subtype))
+                self._ptc_line(head, push_type, push_color,
+                               push_brand, push_subtype))
         except Exception as e:
             logging.info(
                 '[multiACE] _push_slot_rfid_to_extruder(%d) failed: %s' % (head, e))
 
     def _clear_filament_display(self, head):
         try:
-            self._expect_ptc_push(head, '', '00000000', '', '')
             self.gcode.run_script_from_command(
-                'SET_PRINT_FILAMENT_CONFIG '
-                'CONFIG_EXTRUDER=%d '
-                'FILAMENT_TYPE="" '
-                'FILAMENT_COLOR_RGBA=00000000 '
-                'VENDOR="" '
-                'FILAMENT_SUBTYPE=""' % head)
+                self._ptc_line(head, '', '00000000', '', ''))
         except Exception:
             pass
 
